@@ -1,0 +1,119 @@
+FROM osrf/ros:noetic-desktop-full
+
+# Set non-interactive mode to avoid prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install necessary system dependencies and ROS tools (excluding pre-built PCL ROS packages)
+RUN apt-get update && apt-get install -y \
+    gedit \
+    nano \
+    git \
+    build-essential \
+    cmake \
+    python3-pip \
+    python3-rosdep \
+    python3-catkin-tools \
+    locales \
+    libyaml-cpp-dev \
+    ros-noetic-cv-bridge \
+    ros-noetic-image-transport \
+    ros-noetic-tf2-geometry-msgs \
+    ros-noetic-message-filters \
+    ros-noetic-geometry-msgs \
+    ros-noetic-sensor-msgs \
+    ros-noetic-eigen-conversions \
+    ros-noetic-catkin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create the workspace and build kalibr in it
+ENV WORKSPACE=/catkin_ws
+
+RUN mkdir -p $WORKSPACE/src && \
+	cd $WORKSPACE && \
+	catkin init && \
+	catkin config --extend /opt/ros/noetic && \
+	catkin config --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+ADD . $WORKSPACE/src/FAST-LIVO2
+
+ENV THIRD_PARTY=$WORKSPACE/src/FAST-LIVO2/third_party
+
+RUN cd $THIRD_PARTY && \
+    git clone -b pcl-1.14.0 https://github.com/PointCloudLibrary/pcl pcl-1.14.0 && \
+    cd pcl-1.14.0 && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    echo "$(cat kdtree/CMakeFiles/pcl_kdtree.dir/link.txt) -llz4" > kdtree/CMakeFiles/pcl_kdtree.dir/link.txt && \
+    make install -j4 && \
+    cd ../..
+
+RUN cd $THIRD_PARTY && \
+    git clone -b 3.3.7 https://gitlab.com/libeigen/eigen.git && \
+    cd eigen && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make install -j4 && \
+    cd ../..
+
+RUN cd $THIRD_PARTY && \
+    git clone -b 4.2.0 https://github.com/opencv/opencv.git && \
+    cd opencv && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+             -DINSTALL_C_EXAMPLES=OFF \
+             -DINSTALL_PYTHON_EXAMPLES=OFF && \
+    make install -j4 && \
+    cd ../..
+
+
+RUN cd $THIRD_PARTY && \
+    git clone https://github.com/strasdat/Sophus.git && \
+    cd Sophus && \
+    git checkout a621ff2e56c56c839a6c40418d42c3c254424b5c && \
+    sed -i 's/unit_complex_.real() = 1.;/unit_complex_ = std::complex<double>(1,0);/' sophus/so2.cpp && \
+    sed -i 's/unit_complex_.imag() = 0.;//g' sophus/so2.cpp && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wno-error=int-in-bool-context" && \
+    make install -j4 && \
+    cd ../.. 
+
+
+# Clone Vikit
+RUN cd $WORKSPACE/src && \
+    git clone https://github.com/uzh-rpg/rpg_vikit.git && \
+    cd rpg_vikit/vikit_common/src && \
+    sed -i '48s/CV_RANSAC/cv::RANSAC/' homography.cpp && \
+    sed -i '112s/CV_INTER_LINEAR/cv::INTER_LINEAR/' pinhole_camera.cpp && \
+    sed -i '237s/CV_WINDOW_AUTOSIZE/cv::WINDOW_AUTOSIZE/' img_align.cpp && \
+    sed -i '437s/CV_WINDOW_AUTOSIZE/cv::WINDOW_AUTOSIZE/' img_align.cpp
+
+# Clone and build livox_ros_driver
+RUN cd $WORKSPACE/src && \
+    git clone https://github.com/Livox-SDK/livox_ros_driver.git
+
+# Clone and build Fast-LIVO2
+RUN cd $WORKSPACE && \
+    /bin/bash -c "source /opt/ros/noetic/setup.bash && catkin_make"
+
+WORKDIR /catkin_ws
+
+# docker build -t fast-livo2 -f DockerFile . 
+
+# FOLDER=/ssd/dockers/fast_livo2/src/FAST-LIVO2/data && \
+# xhost +local:root
+
+# docker run -it -e "DISPLAY" -e "QT_X11_NO_MITSHM=1" \
+#     -v "/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+#     -v "$FOLDER:/data" fast-livo2
+
+# source devel/setup.bash
+# roslaunch fast_livo mapping_avia.launch
+
+# docker ps
+# docker exec -it -e DISPLAY -e QT_X11_NO_MITSHM=1 84e256fd96d9 bash
+
+# DOCKER_CONTAINER_ID=$(cat /proc/self/cgroup | grep 'docker-' | tail -1 | awk -F'[-.]' '{print $3}')
