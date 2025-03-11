@@ -1,0 +1,26 @@
+
+# Build
+docker build -t fast-livo2 -f DockerFile . 
+
+DATA_FOLDER="/ssd/dockers/fast_livo2/src/FAST-LIVO2/data" && \
+REPO_PATH="/ssd/dockers/fast_livo2/src/FAST-LIVO2" && \
+
+xhost +local:root 
+
+docker run -it -e "DISPLAY" -e "QT_X11_NO_MITSHM=1" \
+     -v "/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+     -v "$DATA_FOLDER:/data"  \
+     -v "$REPO_PATH:/home/catkin_ws/src/FAST-LIVO2" fast-livo2 
+
+cd catkin_ws && \
+    catkin init \
+    && catkin config --extend /opt/ros/noetic \
+    && catkin config --cmake-args -DCMAKE_BUILD_TYPE=Release && \
+    catkin_make
+
+source devel/setup.bash
+
+roslaunch fast_livo2 mapping_avia.launch
+
+# In a new sheell
+docker exec -it -e DISPLAY -e QT_X11_NO_MITSHM=1 CONTAINER_ID bash
